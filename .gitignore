@@ -34,3 +34,5 @@ ENV/
 
 # Data files
 assets.json
+example_assets.json
+*_assets.json

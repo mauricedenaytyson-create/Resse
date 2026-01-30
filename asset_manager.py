@@ -2,8 +2,13 @@
 
 import json
 import os
+import logging
 from typing import List, Optional
 from asset import Asset
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class AssetManager:
@@ -27,16 +32,21 @@ class AssetManager:
                 with open(self.storage_file, 'r') as f:
                     data = json.load(f)
                     self.assets = [Asset.from_dict(asset_data) for asset_data in data]
-            except (json.JSONDecodeError, KeyError) as e:
-                print(f"Error loading assets: {e}")
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                logger.error(f"Error loading assets from {self.storage_file}: {e}")
+                logger.warning("Starting with empty asset list")
                 self.assets = []
         else:
             self.assets = []
     
     def save_assets(self) -> None:
         """Save assets to the storage file."""
-        with open(self.storage_file, 'w') as f:
-            json.dump([asset.to_dict() for asset in self.assets], f, indent=2)
+        try:
+            with open(self.storage_file, 'w') as f:
+                json.dump([asset.to_dict() for asset in self.assets], f, indent=2)
+        except IOError as e:
+            logger.error(f"Error saving assets to {self.storage_file}: {e}")
+            raise
     
     def add_asset(self, asset: Asset) -> bool:
         """
@@ -79,14 +89,31 @@ class AssetManager:
             
         Returns:
             True if updated successfully, False if asset not found
+            
+        Raises:
+            ValueError: If an invalid field name is provided or validation fails
         """
+        # Whitelist of allowed fields
+        allowed_fields = {'name', 'asset_type', 'value', 'purchase_date'}
+        
+        # Check for invalid field names
+        invalid_fields = set(kwargs.keys()) - allowed_fields
+        if invalid_fields:
+            raise ValueError(f"Invalid field name(s): {', '.join(invalid_fields)}")
+        
         asset = self.get_asset(asset_id)
         if not asset:
             return False
         
+        # Validate value and date if provided
+        if 'value' in kwargs and kwargs['value'] < 0:
+            raise ValueError(f"Asset value must be non-negative, got {kwargs['value']}")
+        
+        if 'purchase_date' in kwargs:
+            asset._validate_date_format(kwargs['purchase_date'])
+        
         for key, value in kwargs.items():
-            if hasattr(asset, key):
-                setattr(asset, key, value)
+            setattr(asset, key, value)
         
         self.save_assets()
         return True
